@@ -2,7 +2,7 @@ from threading import Lock
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -55,7 +55,9 @@ def preparar_pedido(datos: PedidoNuevo, pedido_id: str) -> dict[str, object]:
 )
 def crear_pedido(
     datos: PedidoNuevo,
+    solicitud: Request,
     respuesta: Response,
+    tareas: BackgroundTasks,
     clave: Annotated[TextoRequerido, Header(alias="Idempotency-Key")],
 ) -> dict[str, object]:
     with bloqueo_pedidos:
@@ -74,7 +76,11 @@ def crear_pedido(
         pedido = preparar_pedido(datos, pedido_id)
         pedidos[pedido_id] = pedido
         claves_idempotencia[clave] = (datos, pedido_id)
-        return pedido
+
+    procesar_pedido = getattr(solicitud.app.state, "procesar_pedido", None)
+    if procesar_pedido is not None:
+        tareas.add_task(procesar_pedido, pedido_id)
+    return pedido
 
 
 @router.get("/{id}")
