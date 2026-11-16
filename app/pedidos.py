@@ -1,3 +1,5 @@
+import logging
+from collections.abc import Callable
 from threading import Lock
 from typing import Annotated
 from uuid import uuid4
@@ -5,10 +7,12 @@ from uuid import uuid4
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.background import BackgroundTask
 
 from .modelos import PedidoNuevo, TextoRequerido
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/pedidos")
 pedidos: dict[str, dict[str, object]] = {}
 claves_idempotencia: dict[str, tuple[PedidoNuevo, str]] = {}
@@ -21,6 +25,17 @@ async def datos_invalidos(_request: Request, error: RequestValidationError) -> J
         for detalle in error.errors()
     ]
     return JSONResponse(status_code=422, content={"detail": detalles})
+
+
+async def procesar_en_segundo_plano(procesar: Callable[[str], object], pedido_id: str) -> None:
+    try:
+        await BackgroundTask(procesar, pedido_id)()
+    except Exception:
+        with bloqueo_pedidos:
+            pedido = pedidos[pedido_id]
+            if pedido["estado"] != "listo":
+                pedidos[pedido_id] = {**pedido, "estado": "error_cocina"}
+        logger.exception("Fallo al procesar el pedido %s", pedido_id)
 
 
 def preparar_pedido(datos: PedidoNuevo, pedido_id: str) -> dict[str, object]:
@@ -79,7 +94,7 @@ def crear_pedido(
 
     procesar_pedido = getattr(solicitud.app.state, "procesar_pedido", None)
     if procesar_pedido is not None:
-        tareas.add_task(procesar_pedido, pedido_id)
+        tareas.add_task(procesar_en_segundo_plano, procesar_pedido, pedido_id)
     return pedido
 
 
