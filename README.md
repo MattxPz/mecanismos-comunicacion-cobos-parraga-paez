@@ -18,7 +18,7 @@ adelante.
 ## Archivos
 
 - `app/main.py` · crea la aplicación, registra las rutas y ofrece `/health`.
-- `app/pedidos.py` · rutas REST de pedidos, cálculo del total y almacenamiento en memoria.
+- `app/pedidos.py` · rutas REST, cálculo del total, almacenamiento e idempotencia.
 - `app/modelos.py` · modelos de validación de productos y pedidos.
 - `requirements.txt` · dependencias para arrancar.
 - `.gitignore` · exclusiones de Python y configuración local.
@@ -61,13 +61,37 @@ Con el servidor en marcha, ejecuta en otra ventana de PowerShell:
 ```powershell
 $api = "http://127.0.0.1:8000"
 $json = '{"cliente":"Ana","productos":[{"nombre":"Cafe","cantidad":2,"precio":"2.50"}]}'
-$pedido = irm "$api/pedidos" -Method Post -ContentType "application/json" -Body $json
+$headers = @{ "Idempotency-Key" = [guid]::NewGuid().ToString() }
+$pedido = irm "$api/pedidos" -Method Post -Headers $headers -ContentType "application/json" -Body $json
 irm "$api/pedidos/$($pedido.id)"
 ```
 
 `POST /pedidos` devuelve `201` con un `id`, el total (`"5.00"` en el ejemplo)
-y el estado `pendiente`. `GET /pedidos/{id}` devuelve el pedido con `200` o
-`404` si el identificador no existe.
+y el estado `pendiente` al usar una clave nueva. `GET /pedidos/{id}` devuelve
+el pedido con `200` o `404` si el identificador no existe.
+
+### Idempotencia
+
+Envía un encabezado `Idempotency-Key` por cada pedido nuevo, por ejemplo un UUID.
+Reutiliza la misma clave cuando reintentes ese pedido:
+
+- Clave nueva y datos válidos · `201` y un pedido nuevo.
+- Misma clave y mismos datos validados · `200` y el pedido existente, con el
+  mismo ID. El reintento no ejecuta la creación.
+- Misma clave y datos válidos diferentes · `409`.
+- Clave ausente, vacía o compuesta solo de espacios · `422`.
+
+La comparación usa los datos validados. Por ejemplo, `"2.50"` y `2.5` son
+el mismo precio. Cambiar el orden de los productos sí cambia los datos.
+Para probarlo, repite el `POST` del ejemplo con los mismos `$headers` y `$json`.
+Después cambia la cantidad en `$json` y repite el `POST` con los mismos
+`$headers` para obtener `409`.
+
+Los pedidos y las claves viven en la memoria de un solo proceso. Al reiniciar
+o recargar Uvicorn se pierden, y varios workers no comparten esos registros.
+La protección contra duplicados se aplica dentro de ese proceso mientras
+conserva la clave. Cuando se integre cocina, la creación será la única rama
+que podrá iniciar el envío y la facturación.
 
 Envía un cliente y al menos un producto. Cada producto requiere un nombre,
 una cantidad entera entre 1 y 2 147 483 647 y un precio unitario positivo con
