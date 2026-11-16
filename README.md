@@ -1,123 +1,119 @@
 # Pedidos de cafetería
 
-Base mínima de una práctica de sistemas distribuidos con Python y FastAPI.
-La ruta `GET /health` devuelve HTTP `200` y `{"status":"ok"}`.
+API REST de una práctica de sistemas distribuidos. Permite crear pedidos,
+consultar su estado y repetir un envío sin duplicar el pedido dentro de un mismo
+proceso. FastAPI define las rutas, Pydantic valida los datos y Uvicorn recibe las
+solicitudes HTTP.
 
-Los pedidos se crean y consultan por REST. Se guardan en memoria y se pierden
-al reiniciar el servidor. La comunicación por TCP y WebSockets se añadirá más
-adelante.
+## Instalar y arrancar en Windows PowerShell
 
-## Herramientas
-
-- **FastAPI** define las rutas REST, valida los datos de entrada y genera la
-  documentación interactiva en `/docs`.
-- **Uvicorn** es el servidor que ejecuta la aplicación FastAPI y recibe las
-  peticiones HTTP.
-- **Pydantic** define y valida los datos que recibe `POST /pedidos`.
-
-## Archivos
-
-- `app/main.py` · crea la aplicación, registra las rutas y ofrece `/health`.
-- `app/pedidos.py` · rutas REST, cálculo del total, almacenamiento e idempotencia.
-- `app/modelos.py` · modelos de validación de productos y pedidos.
-- `requirements.txt` · dependencias para arrancar.
-- `.gitignore` · exclusiones de Python y configuración local.
-- `README.md` · instalación y ejecución.
-- `docs/bitacora-ia.md` · registro de la ayuda inicial de IA.
-
-## Instalar y ejecutar en Windows PowerShell
-
-Usa **Python 3.13** y verifica que `python --version` muestra esa versión.
-Abre PowerShell en la raíz del proyecto, donde están `requirements.txt` y la
-carpeta `app`, y ejecuta:
+Necesitas **Python 3.13** disponible como `python`. La instalación de dependencias
+requiere acceso al índice de paquetes que usa pip. Abre PowerShell en la raíz
+del proyecto, donde están `requirements.txt` y la carpeta `app`:
 
 ```powershell
+python --version
 python -m venv .venv
 .\.venv\Scripts\pip.exe install -r requirements.txt
-.\.venv\Scripts\uvicorn.exe app.main:app --reload
+.\.venv\Scripts\uvicorn.exe app.main:app
 ```
 
-`app.main:app` indica a Uvicorn que cargue el objeto `app` de `app/main.py`.
-`--reload` reinicia la aplicación al detectar cambios en el código durante el
-desarrollo. Cada reinicio borra los pedidos en memoria. Para detener el servidor,
-pulsa `Ctrl+C` en la ventana donde lo arrancaste.
-
-Por defecto escucha en `127.0.0.1:8000`. Si el puerto está ocupado, añade
-`--port 8001` al comando y usa ese puerto en las consultas.
-
-Para comprobar la respuesta, abre otra ventana de PowerShell y ejecuta:
+Uvicorn escucha en **`http://127.0.0.1:8000`**. Si el puerto está ocupado,
+puedes arrancar en el **8001** y usar ese puerto también en `$api`:
 
 ```powershell
-curl.exe -i http://127.0.0.1:8000/health
+.\.venv\Scripts\uvicorn.exe app.main:app --port 8001
 ```
 
-La respuesta debe mostrar `200 OK` y `{"status":"ok"}`. También puedes abrir
-[/health](http://127.0.0.1:8000/health) en el navegador.
+Para detener tu servidor, pulsa `Ctrl+C` en la ventana donde lo arrancaste.
+La opción `--reload` es útil al desarrollar. Reinicia la aplicación al detectar
+cambios en el código y borra los pedidos y las claves guardados en memoria.
 
-## Crear y consultar un pedido
+## Crear, consultar y repetir un pedido
 
-Con el servidor en marcha, ejecuta en otra ventana de PowerShell:
+En otra ventana de PowerShell ejecuta el bloque completo. Conserva la misma
+clave y el mismo cuerpo durante el reintento:
 
 ```powershell
-$api = "http://127.0.0.1:8000"
-$json = '{"cliente":"Ana","productos":[{"nombre":"Cafe","cantidad":2,"precio":"2.50"}]}'
-$headers = @{ "Idempotency-Key" = [guid]::NewGuid().ToString() }
-$pedido = irm "$api/pedidos" -Method Post -Headers $headers -ContentType "application/json" -Body $json
-irm "$api/pedidos/$($pedido.id)"
+$api = 'http://127.0.0.1:8000'
+curl.exe -i "$api/health"
+
+$solicitud = @{
+    Method = 'Post'
+    ContentType = 'application/json'
+    Headers = @{ 'Idempotency-Key' = [guid]::NewGuid().ToString() }
+    Body = '{"cliente":"Ana","productos":[{"nombre":"Cafe","cantidad":2,"precio":"2.50"}]}'
+}
+
+$alta = iwr "$api/pedidos" @solicitud -UseBasicParsing
+$pedido = $alta.Content | ConvertFrom-Json
+$alta.StatusCode
+$pedido
+
+$consulta = iwr "$api/pedidos/$($pedido.id)" -UseBasicParsing
+$consulta | Select-Object StatusCode, Content
+
+$reintento = iwr "$api/pedidos" @solicitud -UseBasicParsing
+$reintento.StatusCode
+($reintento.Content | ConvertFrom-Json).id -eq $pedido.id
 ```
 
-`POST /pedidos` devuelve `201` con un `id`, el total (`"5.00"` en el ejemplo)
-y el estado `pendiente` al usar una clave nueva. `GET /pedidos/{id}` devuelve
-el pedido con `200` o `404` si el identificador no existe.
+| Operación | Resultado esperado |
+| --- | --- |
+| `GET /health` | `200` con `{"status":"ok"}` |
+| Crear con clave nueva | `201`, ID nuevo, estado `pendiente` y total `"5.00"` en el ejemplo |
+| Consultar el ID creado | `200` con el pedido y su último estado guardado |
+| Repetir la clave y los mismos datos validados | `200` con el mismo ID. La comparación del ejemplo imprime `True` |
+| Reusar la clave con datos válidos distintos | `409` |
+| Consultar un ID inexistente | `404` |
+| Omitir la clave, enviarla en blanco o enviar datos inválidos | `422` |
 
-### Idempotencia
+Genera una clave nueva al crear otro pedido. Cada pedido requiere un cliente y
+al menos un producto con nombre, cantidad entera entre 1 y 2 147 483 647 y
+precio unitario positivo. El precio admite hasta diez dígitos enteros y dos
+decimales. Usa texto como `"2.50"` para enviarlo con precisión. Los importes de
+la respuesta son texto con dos decimales. La comparación usa los datos
+validados. `"2.50"` y `2.5` representan el mismo precio. Cambiar el orden de
+los productos sí cambia los datos. Consulta el contrato en `/docs` o
+`/openapi.json` en el mismo puerto.
 
-Envía un encabezado `Idempotency-Key` por cada pedido nuevo, por ejemplo un UUID.
-Reutiliza la misma clave cuando reintentes ese pedido:
+## Alcance y límites
 
-- Clave nueva y datos válidos · `201` y un pedido nuevo.
-- Misma clave y mismos datos validados · `200` y el pedido existente, con el
-  mismo ID. El reintento no ejecuta la creación.
-- Misma clave y datos válidos diferentes · `409`.
-- Clave ausente, vacía o compuesta solo de espacios · `422`.
+- Los pedidos y las claves se pierden al detener, reiniciar o recargar Uvicorn.
+  Varios workers tienen memorias independientes. Ejecuta un solo proceso para
+  que todos los reintentos consulten el mismo registro.
+- Esta carpeta contiene la API REST. Cocina TCP, el cliente web, las
+  notificaciones WebSocket, el cobro y las estadísticas están ausentes y pendientes
+  de integración.
+- Un pedido queda `pendiente` mientras la aplicación carezca de un procesador
+  registrado. Las pruebas sustituyen cocina para comprobar la llamada única
+  y el estado `error_cocina` ante un fallo simulado. El recorrido completo
+  con los módulos reales está pendiente.
 
-La comparación usa los datos validados. Por ejemplo, `"2.50"` y `2.5` son
-el mismo precio. Cambiar el orden de los productos sí cambia los datos.
-Para probarlo, repite el `POST` del ejemplo con los mismos `$headers` y `$json`.
-Después cambia la cantidad en `$json` y repite el `POST` con los mismos
-`$headers` para obtener `409`.
+## Contratos para integrar
 
-Los pedidos y las claves viven en la memoria de un solo proceso. Al reiniciar
-o recargar Uvicorn se pierden, y varios workers no comparten esos registros.
-La protección contra duplicados se aplica dentro de ese proceso mientras
-conserva la clave.
+La API guarda el pedido y su clave antes de programar, en segundo plano,
+`app.state.procesar_pedido(pedido_id)`. La tarea se programa solo al crear.
+Si el procesador lanza una excepción, la API guarda `error_cocina`, salvo
+cuando el estado ya es `listo`.
 
-Envía un cliente y al menos un producto. Cada producto requiere un nombre,
-una cantidad entera entre 1 y 2 147 483 647 y un precio unitario positivo con
-hasta dos decimales y diez dígitos enteros. Usa texto como `"2.50"` para enviar el
-precio con precisión. La respuesta representa el precio y el total como texto
-con dos decimales. Los datos inválidos reciben `422`.
+| Módulo | Acuerdo pendiente con el equipo |
+| --- | --- |
+| Cocina TCP | Firma de la función, datos del pedido, tiempo de espera, formato de la respuesta y diferencia entre aceptación, rechazo y pedido listo. Si el cliente es síncrono, sus operaciones deben ejecutarse en un hilo, fuera del bloqueo de pedidos. |
+| Avisos WebSocket | Función y formato de `pedido_listo`, destinatario y manejo de fallos de envío. Guardar `listo` antes de enviar el aviso. |
+| Cliente web | Conservar el ID para consultar y la clave con el cuerpo para reintentar. Acordar el contrato de avisos y el origen web. La API aún no configura CORS para clientes en otro origen. |
+| Estadísticas | Acordar cómo obtiene los pedidos, qué estados cuenta y cómo interpreta los importes de la API. Esta versión solo expone la consulta por ID. |
 
-## Integración pendiente con cocina y avisos
+## Pruebas y documentos
 
-El punto de integración de la API es `app.state.procesar_pedido`. Al registrar
-ahí una función con el argumento `pedido_id`, FastAPI la programa para después
-de enviar la respuesta de creación. El pedido y su clave ya están guardados
-cuando se programa la tarea. Los reintentos REST recuperan el pedido existente.
-Mientras la función esté sin registrar, el pedido queda `pendiente`.
+Desde la raíz del proyecto:
 
-Para conectar los módulos del equipo faltan estos acuerdos:
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
 
-- **Cocina TCP** · nombre de la función, datos del pedido que recibe, cómo se
-  configura el tiempo de espera y qué devuelve al aceptar, completar o rechazar
-  el pedido. Acordar cómo informa de una conexión rechazada o una respuesta inválida.
-- **Avisos WebSocket** · nombre de la función, si es asíncrona, cómo se indica el
-  destinatario, qué datos requiere el evento `pedido_listo` y cómo informa de los
-  fallos de envío.
-
-Si el cliente TCP es síncrono, ejecútalo en un hilo con el tiempo de espera del
-cliente, fuera del bloqueo de pedidos. El resultado debe actualizar el pedido
-guardado para que REST muestre el estado. Si cocina confirma que está listo,
-guarda ese estado antes de intentar el aviso. Un fallo del aviso debe conservar
-el estado `listo`. Conserva el pedido si falla el envío a cocina y refleja el
-error en su estado. El procesamiento se programa una sola vez por creación.
+- [Evidencia de la prueba de pedido duplicado](docs/prueba-pedido-duplicado.md)
+- [Escenarios de calidad y mediciones](docs/escenarios-calidad.md)
+- [Contexto C4](docs/contexto-c4.md)
+- [ADR provisional de REST](docs/adr-rest.md)
+- [Bitácora](docs/bitacora-ia.md)

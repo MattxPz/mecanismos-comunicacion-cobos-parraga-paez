@@ -64,7 +64,10 @@ def preparar_pedido(datos: PedidoNuevo, pedido_id: str) -> dict[str, object]:
     "",
     status_code=status.HTTP_201_CREATED,
     responses={
-        200: {"description": "Pedido existente devuelto por idempotencia"},
+        200: {
+            "model": dict[str, object],
+            "description": "Pedido existente devuelto por idempotencia",
+        },
         409: {"description": "Clave reutilizada con datos diferentes"},
     },
 )
