@@ -1,41 +1,37 @@
 # Pedidos de cafetería
 
 Base mínima de una práctica de sistemas distribuidos con Python y FastAPI.
-Actualmente solo funciona `GET /health`, que devuelve `{"status":"ok"}`.
+La ruta `GET /health` devuelve HTTP `200` y `{"status":"ok"}`.
 
 Más adelante se añadirán pedidos, comunicación interna por sockets TCP, avisos
-por WebSockets y datos en memoria. Esas funciones todavía no están implementadas.
+por WebSockets y datos en memoria.
 
 ## Archivos
 
-- `app/main.py`: aplicación FastAPI y ruta de salud.
-- `requirements.txt`: dependencias para arrancar.
-- `.gitignore`: exclusiones de Python y configuración local.
-- `README.md`: instalación y ejecución.
-- `docs/bitacora-ia.md`: registro de la ayuda inicial de IA.
-- `blame.md`: identificación de los archivos generados con ayuda de IA.
+- `app/main.py` · aplicación FastAPI y ruta de salud.
+- `requirements.txt` · dependencias para arrancar.
+- `.gitignore` · exclusiones de Python y configuración local.
+- `README.md` · instalación y ejecución.
+- `docs/bitacora-ia.md` · registro de la ayuda inicial de IA.
 
 ## Instalar y ejecutar en Windows PowerShell
 
-Requisito: Python 3.11 o posterior. Abrir PowerShell en la carpeta
-`MecanismosComunicacion` y ejecutar:
+Usa **Python 3.13** y verifica que `python --version` muestra esa versión.
+Abre PowerShell en la carpeta que contiene `requirements.txt` y ejecuta:
 
 ```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+python -m venv .venv
+.\.venv\Scripts\pip.exe install -r requirements.txt
+.\.venv\Scripts\uvicorn.exe app.main:app
 ```
 
-No hace falta activar el entorno virtual. Para detener el servidor: `Ctrl+C`.
-
-En otra terminal PowerShell:
+Para comprobar la respuesta, abre otra ventana de PowerShell y ejecuta:
 
 ```powershell
-$respuesta = Invoke-WebRequest -Uri "http://127.0.0.1:8000/health" -UseBasicParsing
-$respuesta.StatusCode
-$respuesta.Content
+curl.exe -i http://127.0.0.1:8000/health
 ```
 
-Resultado esperado: código `200` y cuerpo `{"status":"ok"}`.
-También se puede abrir [la ruta de salud](http://127.0.0.1:8000/health)
-en el navegador.
+La respuesta debe mostrar `200 OK` y `{"status":"ok"}`. También puedes abrir
+[/health](http://127.0.0.1:8000/health) en el navegador.
+Para detener el servidor, pulsa `Ctrl+C`.
+
