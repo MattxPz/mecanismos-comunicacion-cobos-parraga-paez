@@ -1,14 +1,18 @@
+from threading import Lock
+from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from .modelos import PedidoNuevo
+from .modelos import PedidoNuevo, TextoRequerido
 
 
 router = APIRouter(prefix="/pedidos")
 pedidos: dict[str, dict[str, object]] = {}
+claves_idempotencia: dict[str, tuple[PedidoNuevo, str]] = {}
+bloqueo_pedidos = Lock()
 
 
 async def datos_invalidos(_request: Request, error: RequestValidationError) -> JSONResponse:
@@ -19,8 +23,7 @@ async def datos_invalidos(_request: Request, error: RequestValidationError) -> J
     return JSONResponse(status_code=422, content={"detail": detalles})
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
-def crear_pedido(datos: PedidoNuevo) -> dict[str, object]:
+def preparar_pedido(datos: PedidoNuevo, pedido_id: str) -> dict[str, object]:
     productos = []
     total_centavos = 0
     for producto in datos.productos:
@@ -33,15 +36,50 @@ def crear_pedido(datos: PedidoNuevo) -> dict[str, object]:
         })
 
     unidades, centavos = divmod(total_centavos, 100)
-    pedido_id = str(uuid4())
-    pedido = {
+    return {
         "id": pedido_id,
         "cliente": datos.cliente,
         "productos": productos,
         "total": f"{unidades}.{centavos:02d}",
         "estado": "pendiente",
     }
-    pedidos[pedido_id] = pedido
+
+
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        200: {"description": "Pedido existente devuelto por idempotencia"},
+        409: {"description": "Clave reutilizada con datos diferentes"},
+    },
+)
+def crear_pedido(
+    datos: PedidoNuevo,
+    solicitud: Request,
+    respuesta: Response,
+    tareas: BackgroundTasks,
+    clave: Annotated[TextoRequerido, Header(alias="Idempotency-Key")],
+) -> dict[str, object]:
+    with bloqueo_pedidos:
+        registro = claves_idempotencia.get(clave)
+        if registro is not None:
+            datos_originales, pedido_id = registro
+            if datos != datos_originales:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotency-Key ya usada con datos diferentes",
+                )
+            respuesta.status_code = status.HTTP_200_OK
+            return pedidos[pedido_id]
+
+        pedido_id = str(uuid4())
+        pedido = preparar_pedido(datos, pedido_id)
+        pedidos[pedido_id] = pedido
+        claves_idempotencia[clave] = (datos, pedido_id)
+
+    procesar_pedido = getattr(solicitud.app.state, "procesar_pedido", None)
+    if procesar_pedido is not None:
+        tareas.add_task(procesar_pedido, pedido_id)
     return pedido
 
 
