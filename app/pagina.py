@@ -23,6 +23,8 @@ PAGINA = """<!DOCTYPE html>
     .ok { color: #1b5e20; }
     table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
     th, td { text-align: left; padding: 0.4rem; border-bottom: 1px solid #ddd; }
+    #estadisticas { display: flex; gap: 2rem; }
+    #estadisticas strong { font-size: 1.5rem; display: block; }
     .aviso { background: #e8f5e9; border: 1px solid #1b5e20; border-radius: 8px; padding: 0.5rem 0.75rem; margin: 0.5rem 0; }
   </style>
 </head>
@@ -39,6 +41,12 @@ PAGINA = """<!DOCTYPE html>
     <button type="submit">Crear pedido</button>
   </form>
   <p id="mensaje"></p>
+
+  <h2>Estadísticas</h2>
+  <div id="estadisticas">
+    <p>Pedidos listos <strong id="pedidos-listos">-</strong></p>
+    <p>Importe total <strong id="importe-total">-</strong></p>
+  </div>
 
   <h2>Pedidos <button id="actualizar" type="button">Actualizar</button></h2>
   <table>
@@ -107,6 +115,18 @@ PAGINA = """<!DOCTYPE html>
       });
     }
 
+    async function cargarEstadisticas() {
+      try {
+        const respuesta = await fetch("/estadisticas");
+        if (!respuesta.ok) throw new Error("HTTP " + respuesta.status);
+        const datos = await respuesta.json();
+        document.getElementById("pedidos-listos").textContent = datos.pedidos_listos;
+        document.getElementById("importe-total").textContent = datos.importe_total;
+      } catch (error) {
+        mostrarMensaje("No se pudieron cargar las estadísticas: " + error.message, "error");
+      }
+    }
+
     async function cargarPedidos() {
       try {
         const respuesta = await fetch("/pedidos");
@@ -122,6 +142,8 @@ PAGINA = """<!DOCTYPE html>
           fila.appendChild(botonMarcarListo(pedido));
           lista.appendChild(fila);
         }
+        // Las estadísticas cambian cuando cambia la lista (pedido nuevo o listo).
+        await cargarEstadisticas();
       } catch (error) {
         mostrarMensaje("No se pudo cargar la lista: " + error.message, "error");
       }

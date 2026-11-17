@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from .avisos import manager
 from .avisos import router as router_avisos
 from .cliente_cocina import crear_procesador
+from .estadisticas import router as router_estadisticas
 from .pagina import router as router_pagina
 from .pedidos import bloqueo_pedidos, datos_invalidos, pedidos, router
 
@@ -29,6 +30,7 @@ app.add_exception_handler(RequestValidationError, datos_invalidos)
 app.include_router(router)
 app.include_router(router_pagina)
 app.include_router(router_avisos)
+app.include_router(router_estadisticas)
 
 
 @app.get("/health")
