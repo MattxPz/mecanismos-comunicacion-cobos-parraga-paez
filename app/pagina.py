@@ -1,3 +1,6 @@
+# Código generado con IA (Claude Code, modelo Claude Opus 5.5).
+# Ver docs/bitacora-ia.md.
+
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
@@ -50,7 +53,7 @@ PAGINA = """<!DOCTYPE html>
 
   <h2>Pedidos <button id="actualizar" type="button">Actualizar</button></h2>
   <table>
-    <thead><tr><th>Cliente</th><th>Productos</th><th>Total</th><th>Estado</th><th>Prueba</th></tr></thead>
+    <thead><tr><th>Cliente</th><th>Productos</th><th>Total</th><th>Estado</th></tr></thead>
     <tbody id="lista"></tbody>
   </table>
 
@@ -70,22 +73,6 @@ PAGINA = """<!DOCTYPE html>
       const td = document.createElement("td");
       td.textContent = texto;  // textContent evita inyectar HTML.
       fila.appendChild(td);
-    }
-
-    // TEMPORAL: botón para probar el aviso sin cocina TCP.
-    function botonMarcarListo(pedido) {
-      const td = document.createElement("td");
-      const boton = document.createElement("button");
-      boton.type = "button";
-      boton.textContent = "Marcar listo";
-      boton.disabled = pedido.estado === "listo";
-      boton.addEventListener("click", async () => {
-        const respuesta = await fetch("/pedidos/" + encodeURIComponent(pedido.id) + "/marcar-listo", { method: "POST" });
-        if (!respuesta.ok) mostrarMensaje("No se pudo marcar listo: HTTP " + respuesta.status, "error");
-        // La lista se recarga al llegar el aviso por WebSocket.
-      });
-      td.appendChild(boton);
-      return td;
     }
 
     function mostrarAviso(datos) {
@@ -139,7 +126,6 @@ PAGINA = """<!DOCTYPE html>
           celda(fila, pedido.productos.map(p => p.cantidad + " x " + p.nombre).join(", "));
           celda(fila, pedido.total);
           celda(fila, pedido.estado);
-          fila.appendChild(botonMarcarListo(pedido));
           lista.appendChild(fila);
         }
         // Las estadísticas cambian cuando cambia la lista (pedido nuevo o listo).

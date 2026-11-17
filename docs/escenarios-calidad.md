@@ -152,15 +152,18 @@ evidencia completa.
 | Elemento | Escenario |
 | --- | --- |
 | Atributo | Disponibilidad (tolerancia a fallos). |
-| Estímulo | Hay dos clientes conectados a `/ws` y uno se desconecta: cierra la pestaña o se corta su conexión sin cerrar el WebSocket. Después, un pedido pasa a `listo`. |
-| Entorno | Un proceso de Uvicorn en local, con pedidos en memoria. El aviso se dispara con `POST /pedidos/{id}/marcar-listo`. |
+| Estímulo | Hay dos clientes conectados a `/ws` y uno se desconecta: cierra la pestaña o se corta su conexión sin cerrar el WebSocket. Después se crea un pedido y cocina lo deja `listo`. |
+| Entorno | Un proceso de Uvicorn y un servidor de cocina TCP en local, con pedidos en memoria. El aviso sale del flujo real: `crear_procesador(..., al_listo=avisar_pedido_listo)`. |
 | Respuesta | El servidor quita al cliente desconectado de la lista, envía el aviso al cliente que sigue conectado y continúa atendiendo solicitudes. |
-| Medida verificable | El cliente conectado recibe `{"id": ..., "estado": "listo"}` en menos de 1 s. `GET /health` responde `200`, el pedido queda `listo`, un pedido nuevo recibe `201` y el proceso sigue activo. |
+| Medida verificable | El cliente conectado recibe `{"id": ..., "estado": "listo"}` en menos de 1 s desde que cocina deja el pedido listo. `GET /health` responde `200`, el pedido queda `listo` con factura, un pedido nuevo recibe `201` y su aviso, y el proceso sigue activo. |
 
-En la ejecución del 16 de noviembre de 2026 (Windows 11, Python 3.12.10), el
-aviso llegó al otro cliente entre 3,7 ms y 12,7 ms, tanto con cierre normal
-como con corte sin cierre. `/health` respondió `200`, los pedidos nuevos
-recibieron `201` y el proceso siguió activo. Una prueba adicional dejó en la
-lista un cliente ya cerrado: el envío a ese cliente falló, `broadcast` lo
-quitó y el otro cliente recibió el aviso igual. La evidencia completa está en
-la [prueba de cliente desconectado](prueba-cliente-desconectado.md).
+En la ejecución del 16 de noviembre de 2026 (Windows 11, Python 3.12.10), con
+API y cocina como procesos separados, el aviso llegó al otro cliente a los
+2,014 s y 2,039 s del `POST`, de los cuales 2 s son la demora de preparación
+de cocina. En las pruebas automáticas, sin esa demora, llegó en 36 ms y
+117 ms. En todos los casos `/health` respondió `200`, los pedidos nuevos
+recibieron `201` con su aviso y los procesos siguieron activos. Una prueba
+adicional dejó en la lista un cliente ya cerrado: el envío a ese cliente
+falló, `broadcast` lo quitó y el otro cliente recibió el aviso igual. La
+evidencia completa está en la
+[prueba de cliente desconectado](prueba-cliente-desconectado.md).

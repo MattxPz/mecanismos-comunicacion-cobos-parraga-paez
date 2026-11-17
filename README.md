@@ -82,8 +82,7 @@ $reintento.StatusCode
 | `GET /health` | `200` con `{"status":"ok"}` |
 | Crear con clave nueva | `201`, ID nuevo, estado `pendiente` y total `"5.00"` en el ejemplo |
 | Consultar el ID creado | `200` con el pedido y su último estado guardado |
-| Conectar a `/ws` por WebSocket | Conexión aceptada. Recibe en JSON lo que envíe `broadcast` |
-| `POST /pedidos/{id}/marcar-listo` (temporal) | `200` con el pedido en `listo` y aviso por `/ws`. `404` si el ID no existe |
+| Conectar a `/ws` por WebSocket | Conexión aceptada. Cuando cocina deja un pedido `listo`, recibe `{"id": ..., "estado": "listo"}` |
 | `GET /estadisticas` | `200` con `pedidos_listos` e `importe_total` de los pedidos en `listo` |
 | `GET /pedidos` | `200` con la lista de pedidos guardados, en orden de creación |
 | Repetir la clave y los mismos datos validados | `200` con el mismo ID. La comparación del ejemplo imprime `True` |
@@ -112,8 +111,9 @@ navegador.
   Varios workers tienen memorias independientes. Ejecuta un solo proceso para
   que todos los reintentos consulten el mismo registro.
 - La API está conectada con el servicio de cocina TCP (`cocina/`), que
-  registra caja y facturación. El cliente web, las notificaciones WebSocket y
-  las estadísticas están pendientes.
+  registra caja y facturación. Cuando cocina deja un pedido `listo`, la API
+  lo avisa por WebSocket a la página web, que también muestra las
+  estadísticas.
 - `app/main.py` registra el cliente de cocina en el arranque (`lifespan`). Las
   pruebas arrancan Uvicorn con `lifespan="off"` y registran sus propios
   sustitutos o una cocina de prueba en un puerto libre.
@@ -127,9 +127,9 @@ cuando el estado ya es `listo`.
 
 | Módulo | Acuerdo pendiente con el equipo |
 | --- | --- |
-| Cocina TCP | Integrado. `app/main.py` registra `app.state.procesar_pedido = crear_procesador(pedidos, bloqueo_pedidos)` al arrancar. Estados: `pendiente` → `en_cocina` → `listo` (con `factura` y `cobro`) o `error_cocina` (con `error`). La llamada de red se hace fuera del bloqueo de pedidos. |
-| Avisos WebSocket | `app/avisos.py` expone `ws://127.0.0.1:8000/ws` y `manager = ConnectionManager()` con `conectar`, `desconectar` y `broadcast(mensaje)`. Al quedar listo se envía `{"id": ..., "estado": "listo"}` y la página muestra un aviso. Hoy solo lo dispara el endpoint temporal `POST /pedidos/{id}/marcar-listo` (botón **Marcar listo**). Pendiente: pasar `al_listo=avisar_pedido_listo` a `crear_procesador` en `app/main.py` y quitar el endpoint temporal. Ver el [ADR de WebSockets](docs/adr-websockets.md). Guardar `listo` antes de enviar el aviso. `crear_procesador` acepta `al_listo(pedido)`, que se llama después de guardar `listo`; si lanza una excepción, se registra en el log y el pedido sigue `listo`. |
-| Cliente web | Página básica integrada en `GET /` (mismo origen, sin CORS). Conservar el ID para consultar y la clave con el cuerpo para reintentar. Acordar el contrato de avisos y el origen web. La API aún no configura CORS para clientes en otro origen. |
+| Cocina TCP | Integrado. `app/main.py` registra `app.state.procesar_pedido = crear_procesador(pedidos, bloqueo_pedidos, al_listo=avisar_pedido_listo)` al arrancar. Estados: `pendiente` → `en_cocina` → `listo` (con `factura` y `cobro`) o `error_cocina` (con `error`). La llamada de red se hace fuera del bloqueo de pedidos. |
+| Avisos WebSocket | `app/avisos.py` expone `ws://127.0.0.1:8000/ws` y `manager = ConnectionManager()` con `conectar`, `desconectar` y `broadcast(mensaje)`. Integrado con cocina: el procesador llama a `avisar_pedido_listo` desde su hilo después de guardar `listo`, y se envía `{"id": ..., "estado": "listo"}`. La página muestra un aviso. Ver el [ADR de WebSockets](docs/adr-websockets.md). Guardar `listo` antes de enviar el aviso. `crear_procesador` acepta `al_listo(pedido)`, que se llama después de guardar `listo`; si lanza una excepción, se registra en el log y el pedido sigue `listo`. |
+| Cliente web | Página básica integrada en `GET /` (mismo origen, sin CORS). Conservar el ID para consultar y la clave con el cuerpo para reintentar. Recibe los avisos por `/ws`. La API aún no configura CORS para clientes en otro origen. |
 | Estadísticas | `GET /estadisticas` lee el almacén en memoria y devuelve `{"pedidos_listos": n, "importe_total": "x.yy"}`: cuenta los pedidos con `estado` igual a `"listo"` y suma su campo `total` con `Decimal`. La página lo muestra y lo recarga junto con la lista. |
 
 ## Pruebas y documentos

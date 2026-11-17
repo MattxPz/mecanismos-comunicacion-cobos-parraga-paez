@@ -101,6 +101,7 @@ def crear_pedido(
     return pedido
 
 
+# Generado con IA (Claude Code). Ver docs/bitacora-ia.md.
 @router.get("")
 def listar_pedidos() -> list[dict[str, object]]:
     with bloqueo_pedidos:

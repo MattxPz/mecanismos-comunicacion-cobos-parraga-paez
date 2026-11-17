@@ -1,3 +1,6 @@
+# Pruebas generadas con IA (Claude Code, modelo Claude Opus 5.5).
+# Ver docs/bitacora-ia.md.
+
 import asyncio
 import json
 import socket
@@ -5,16 +8,18 @@ import unittest
 from threading import Thread
 from time import monotonic, perf_counter, sleep
 from unittest.mock import patch
-from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from uvicorn import Config, Server
 from websockets.sync.client import connect
 
+from app import main
 from app.avisos import ConnectionManager, avisar_pedido_listo, manager
+from app.cliente_cocina import crear_procesador
 from app.main import app
-from app.pedidos import claves_idempotencia, pedidos
+from app.pedidos import bloqueo_pedidos, claves_idempotencia, pedidos
+from cocina.servidor import Cocina, ServidorCocina
 
 
 class ClienteFalso:
@@ -58,11 +63,37 @@ class ConnectionManagerTest(unittest.TestCase):
             gestor.broadcast_desde_hilo({"id": "1", "estado": "listo"})
 
 
+class CicloDeVidaTest(unittest.TestCase):
+    def test_arranque_conecta_el_aviso_con_cocina(self):
+        # Comprueba la conexión hecha en app/main.py: el procesador de cocina
+        # recibe al_listo=avisar_pedido_listo y el bucle queda guardado.
+        argumentos = {}
+
+        def crear_falso(*args, **kwargs):
+            argumentos.update(kwargs)
+            return lambda pedido_id: None
+
+        self.enterContext(patch.object(main, "crear_procesador", crear_falso))
+        self.enterContext(patch.object(manager, "bucle", None))
+        self.enterContext(patch.object(app.state, "procesar_pedido", None, create=True))
+
+        async def arrancar():
+            async with main.ciclo_de_vida(app):
+                return manager.bucle is asyncio.get_running_loop()
+
+        self.assertTrue(asyncio.run(arrancar()))
+        self.assertIs(argumentos["al_listo"], avisar_pedido_listo)
+
+
 class WebSocketTest(unittest.TestCase):
+    """API y cocina TCP reales: REST, luego TCP y luego el aviso WebSocket."""
+
     def setUp(self):
         self.enterContext(patch.object(manager, "conexiones", []))
         self.enterContext(patch.dict(pedidos, clear=True))
         self.enterContext(patch.dict(claves_idempotencia, clear=True))
+        self.iniciar_cocina()
+
         escucha = self.enterContext(socket.socket())
         escucha.bind(("127.0.0.1", 0))
         self.base = f"http://127.0.0.1:{escucha.getsockname()[1]}"
@@ -81,6 +112,26 @@ class WebSocketTest(unittest.TestCase):
         self.addCleanup(self.detener_servidor)
         self.esperar(lambda: self.servidor.started, "Uvicorn no arrancó")
 
+    def iniciar_cocina(self):
+        # Cocina TCP real en un puerto libre, con el mismo registro que hace
+        # app/main.py al arrancar: al_listo=avisar_pedido_listo. Sin demora
+        # de preparación, para medir solo el recorrido TCP y el aviso.
+        cocina = ServidorCocina(("127.0.0.1", 0), Cocina(demora=0))
+        hilo = Thread(target=cocina.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+        hilo.start()
+
+        def detener():
+            cocina.shutdown()
+            cocina.server_close()
+            hilo.join(timeout=5)
+
+        self.addCleanup(detener)
+        procesador = crear_procesador(
+            pedidos, bloqueo_pedidos, "127.0.0.1", cocina.server_address[1], 3,
+            al_listo=avisar_pedido_listo,
+        )
+        self.enterContext(patch.object(app.state, "procesar_pedido", procesador, create=True))
+
     def detener_servidor(self):
         self.servidor.should_exit = True
         self.hilo.join(timeout=5)
@@ -92,6 +143,42 @@ class WebSocketTest(unittest.TestCase):
         while not condicion() and monotonic() < limite:
             sleep(0.01)
         self.assertTrue(condicion(), mensaje)
+
+    def post(self, ruta, datos):
+        headers = {"Content-Type": "application/json", "Idempotency-Key": str(uuid4())}
+        peticion = Request(self.base + ruta, data=json.dumps(datos).encode(), headers=headers)
+        with urlopen(peticion, timeout=3) as respuesta:
+            return respuesta.status, json.load(respuesta)
+
+    def obtener(self, ruta):
+        with urlopen(self.base + ruta, timeout=3) as respuesta:
+            return respuesta.status, json.load(respuesta)
+
+    def datos(self, cliente="Ana"):
+        return {"cliente": cliente, "productos": [{"nombre": "Cafe", "cantidad": 1, "precio": "1.50"}]}
+
+    def test_pedido_listo_en_cocina_avisa_por_websocket(self):
+        with connect(self.url) as cliente:
+            self.esperar(lambda: len(manager.conexiones) == 1, "No se registró el cliente")
+
+            estado, creado = self.post("/pedidos", self.datos())
+            aviso = json.loads(cliente.recv(timeout=3))
+
+        self.assertEqual((estado, creado["estado"]), (201, "pendiente"))
+        self.assertEqual(aviso, {"id": creado["id"], "estado": "listo"})
+        _, consultado = self.obtener(f"/pedidos/{creado['id']}")
+        self.assertEqual((consultado["estado"], consultado["factura"]), ("listo", "F-00001"))
+
+    def test_aviso_desde_hilo_como_el_procesador_de_cocina(self):
+        with connect(self.url) as cliente:
+            self.esperar(lambda: len(manager.conexiones) == 1, "No se registró el cliente")
+            pedido = {"id": "abc", "cliente": "Ana", "estado": "listo", "factura": "F-00001"}
+
+            hilo = Thread(target=avisar_pedido_listo, args=(pedido,))
+            hilo.start()
+            hilo.join(timeout=3)
+
+            self.assertEqual(json.loads(cliente.recv(timeout=3)), {"id": "abc", "estado": "listo"})
 
     def test_cliente_que_se_va_no_afecta_a_los_demas(self):
         with connect(self.url) as cliente_a, connect(self.url) as cliente_b:
@@ -105,84 +192,41 @@ class WebSocketTest(unittest.TestCase):
 
             self.assertEqual(json.loads(cliente_b.recv(timeout=3)), aviso)
 
-    def post(self, ruta, datos=None):
-        cuerpo = json.dumps(datos).encode() if datos is not None else b""
-        headers = {"Content-Type": "application/json", "Idempotency-Key": str(uuid4())}
-        try:
-            respuesta = urlopen(Request(self.base + ruta, data=cuerpo, headers=headers), timeout=3)
-        except HTTPError as error:
-            respuesta = error
-        with respuesta:
-            return respuesta.status, json.load(respuesta)
-
-    def conectar_cliente(self):
-        cliente = self.enterContext(connect(self.url))
-        self.esperar(lambda: len(manager.conexiones) == 1, "No se registró el cliente")
-        return cliente
-
-    def test_marcar_listo_avisa_por_websocket(self):
-        cliente = self.conectar_cliente()
-        datos = {"cliente": "Ana", "productos": [{"nombre": "Cafe", "cantidad": 1, "precio": "1.00"}]}
-        _, creado = self.post("/pedidos", datos)
-
-        estado, listo = self.post(f"/pedidos/{creado['id']}/marcar-listo")
-
-        self.assertEqual((estado, listo["estado"]), (200, "listo"))
-        self.assertEqual(pedidos[creado["id"]]["estado"], "listo")
-        self.assertEqual(json.loads(cliente.recv(timeout=3)), {"id": creado["id"], "estado": "listo"})
-
-    def test_marcar_listo_id_inexistente(self):
-        self.assertEqual(self.post(f"/pedidos/{uuid4()}/marcar-listo")[0], 404)
-
-    def test_aviso_desde_hilo_como_el_procesador_de_cocina(self):
-        cliente = self.conectar_cliente()
-        pedido = {"id": "abc", "cliente": "Ana", "estado": "listo", "factura": "F-00001"}
-
-        hilo = Thread(target=avisar_pedido_listo, args=(pedido,))
-        hilo.start()
-        hilo.join(timeout=3)
-
-        self.assertEqual(json.loads(cliente.recv(timeout=3)), {"id": "abc", "estado": "listo"})
-
-    def obtener(self, ruta):
-        with urlopen(self.base + ruta, timeout=3) as respuesta:
-            return respuesta.status, json.load(respuesta)
-
     def comprobar_cliente_desconectado(self, desconectar, caso):
         """Escenario: un cliente WebSocket se va y el otro sigue recibiendo avisos.
 
-        Simula dos pestañas abiertas: se desconecta una, se marca un pedido
-        como listo y se comprueba que la otra recibe el aviso y que la API
-        sigue atendiendo.
+        Simula dos pestañas abiertas: se desconecta una, se crea un pedido,
+        cocina lo deja listo y se comprueba que la otra recibe el aviso y que
+        la API sigue atendiendo.
         """
-        datos = {"cliente": "Ana", "productos": [{"nombre": "Cafe", "cantidad": 1, "precio": "1.50"}]}
         with connect(self.url) as pestana_a, connect(self.url) as pestana_b:
             self.esperar(lambda: len(manager.conexiones) == 2, "No se registraron 2 clientes")
-            _, creado = self.post("/pedidos", datos)
 
             desconectar(pestana_a)
             self.esperar(lambda: len(manager.conexiones) == 1, "No se quitó al cliente desconectado")
 
             inicio = perf_counter()
-            estado_listo, _ = self.post(f"/pedidos/{creado['id']}/marcar-listo")
+            estado_creado, creado = self.post("/pedidos", self.datos())
             aviso = json.loads(pestana_b.recv(timeout=3))
             milisegundos = (perf_counter() - inicio) * 1000
 
             salud = self.obtener("/health")
             _, consultado = self.obtener(f"/pedidos/{creado['id']}")
-            estado_nuevo, _ = self.post("/pedidos", {**datos, "cliente": "Luis"})
+            estado_nuevo, _ = self.post("/pedidos", self.datos("Luis"))
+            aviso_nuevo = json.loads(pestana_b.recv(timeout=3))
 
-        self.assertEqual(estado_listo, 200)
+        self.assertEqual(estado_creado, 201)
         self.assertEqual(aviso, {"id": creado["id"], "estado": "listo"})
         self.assertEqual(salud, (200, {"status": "ok"}))
         self.assertEqual(consultado["estado"], "listo")
-        self.assertEqual(estado_nuevo, 201)
+        self.assertEqual((estado_nuevo, aviso_nuevo["estado"]), (201, "listo"))
         self.assertTrue(self.hilo.is_alive(), "El servidor se detuvo")
         print(
             f"\nCliente desconectado ({caso}) | clientes tras desconectar=1 | "
-            f"marcar-listo={estado_listo} | aviso al otro cliente={aviso['estado']} "
-            f"en {milisegundos:.1f} ms | health={salud[0]} | pedido={consultado['estado']} | "
-            f"pedido nuevo={estado_nuevo} | servidor activo={self.hilo.is_alive()}",
+            f"POST={estado_creado} | aviso al otro cliente={aviso['estado']} "
+            f"en {milisegundos:.1f} ms | health={salud[0]} | pedido={consultado['estado']} "
+            f"factura={consultado['factura']} | pedido nuevo={estado_nuevo}/{aviso_nuevo['estado']} | "
+            f"servidor activo={self.hilo.is_alive()}",
             flush=True,
         )
 
@@ -200,8 +244,9 @@ class WebSocketTest(unittest.TestCase):
         self.comprobar_cliente_desconectado(cortar, "corte sin cierre")
 
     def test_cliente_muerto_aun_en_la_lista_no_afecta_a_los_demas(self):
-        # El servidor todavía no notó la desconexión cuando llega el aviso:
-        # broadcast() falla al enviarle, lo quita y sigue con el otro cliente.
+        # El servidor todavía no notó la desconexión cuando cocina deja el
+        # pedido listo: broadcast() falla al enviarle, lo quita y sigue con
+        # el otro cliente.
         with connect(self.url) as pestana_a:
             self.esperar(lambda: len(manager.conexiones) == 1, "No se registró el cliente A")
             servidor_a = manager.conexiones[0]
@@ -211,11 +256,11 @@ class WebSocketTest(unittest.TestCase):
                 self.esperar(lambda: len(manager.conexiones) == 1, "No se quitó al cliente A")
                 manager.conexiones.insert(0, servidor_a)
 
-                aviso = {"id": "abc", "estado": "listo"}
                 with self.assertLogs("app.avisos", level="WARNING"):
-                    asyncio.run_coroutine_threadsafe(manager.broadcast(aviso), self.bucle).result(3)
+                    _, creado = self.post("/pedidos", self.datos())
+                    aviso = json.loads(pestana_b.recv(timeout=3))
 
-                self.assertEqual(json.loads(pestana_b.recv(timeout=3)), aviso)
+                self.assertEqual(aviso, {"id": creado["id"], "estado": "listo"})
                 self.assertEqual(len(manager.conexiones), 1)
                 self.assertNotIn(servidor_a, manager.conexiones)
                 self.assertEqual(self.obtener("/health"), (200, {"status": "ok"}))

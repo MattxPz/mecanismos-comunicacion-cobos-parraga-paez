@@ -82,15 +82,18 @@ Referencias: [protocolo WebSocket, RFC 6455](https://www.rfc-editor.org/rfc/rfc6
   API. Con varios procesos de la API, cada uno avisaría solo a sus clientes.
 - **Limitación.** Si la página estaba cerrada cuando el pedido quedó listo, no
   recibe el aviso después. Tiene que ver el estado en la lista.
-- **Detalle técnico.** La cocina trabaja en un hilo aparte y el envío
-  WebSocket corre en el bucle de eventos de Uvicorn. Por eso el aviso pasa
-  por `asyncio.run_coroutine_threadsafe`: le entrega el envío al bucle sin
-  bloquear el hilo de cocina.
+- **Detalle técnico.** El procesador de cocina corre en un hilo aparte y
+  llama a `al_listo` (es decir, a `avisar_pedido_listo`) cuando guarda el
+  pedido como `listo`. El envío WebSocket, en cambio, corre en el bucle de
+  eventos de Uvicorn, que la app guarda en `manager.bucle` al arrancar. Por
+  eso el aviso pasa por `asyncio.run_coroutine_threadsafe`: le entrega el
+  envío a ese bucle sin bloquear el hilo de cocina.
 
 ## Estado
 
 Implementado en `app/avisos.py` y `app/pagina.py`, con pruebas en
-`tests/test_avisos.py`. Por ahora el aviso solo lo dispara el botón temporal
-**Marcar listo** (`POST /pedidos/{id}/marcar-listo`). Falta conectarlo a la
-cocina real pasando `al_listo=avisar_pedido_listo` a `crear_procesador` en
-`app/main.py`.
+`tests/test_avisos.py`. Conectado al flujo real: `app/main.py` pasa
+`al_listo=avisar_pedido_listo` a `crear_procesador`, así que el aviso sale
+cuando cocina deja el pedido `listo`. El recorrido REST → TCP → WebSocket se
+comprobó con API y cocina como procesos separados en la
+[prueba de cliente desconectado](prueba-cliente-desconectado.md).

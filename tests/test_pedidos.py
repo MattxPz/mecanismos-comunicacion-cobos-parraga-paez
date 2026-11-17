@@ -82,7 +82,7 @@ class PedidosTest(unittest.TestCase):
         self.assertIn('fetch("/pedidos"', html)
         self.assertIn("Idempotency-Key", html)
         self.assertIn('"/ws"', html)
-        self.assertIn("/marcar-listo", html)
+        self.assertNotIn("marcar-listo", html)
         self.assertIn('fetch("/estadisticas")', html)
 
     def test_estadisticas_sin_pedidos(self):

@@ -67,12 +67,12 @@ stateDiagram-v2
 | API REST, idempotencia | Mateo | `app/main.py`, `app/pedidos.py`, `app/modelos.py` |
 | Servicio de cocina TCP, caja y facturación | Veronica | `cocina/servidor.py`, `cocina/registros.py` |
 | Cliente TCP usado por la API | Veronica | `app/cliente_cocina.py` |
-| Página HTML, avisos WebSocket y estadísticas | Jonnathan | Pendiente |
+| Página HTML, avisos WebSocket y estadísticas | Jonnathan | `app/pagina.py`, `app/avisos.py`, `app/estadisticas.py` |
 
 La API publica el punto de integración `app.state.procesar_pedido(pedido_id)`.
-El cliente TCP lo implementa con `crear_procesador(pedidos, bloqueo_pedidos)`.
-El parámetro `al_listo` de esa función es el punto donde se conectan los avisos
-WebSocket.
+El cliente TCP lo implementa con `crear_procesador(pedidos, bloqueo_pedidos,
+al_listo=avisar_pedido_listo)`. El parámetro `al_listo` conecta cocina con los
+avisos WebSocket.
 
 ## Limitaciones
 

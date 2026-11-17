@@ -1,3 +1,6 @@
+# Código generado con IA (Claude Code, modelo Claude Opus 5.5).
+# Ver docs/bitacora-ia.md.
+
 from decimal import Decimal
 
 from fastapi import APIRouter

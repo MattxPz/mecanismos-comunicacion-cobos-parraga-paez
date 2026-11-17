@@ -1,9 +1,10 @@
+# Código generado con IA (Claude Code, modelo Claude Opus 5.5).
+# Ver docs/bitacora-ia.md.
+
 import asyncio
 import logging
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
-
-from .pedidos import bloqueo_pedidos, pedidos
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 
 logger = logging.getLogger(__name__)
@@ -70,18 +71,3 @@ async def avisos(websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         manager.desconectar(websocket)
 
-
-# TEMPORAL: sirve para probar el aviso sin cocina TCP. Quitar cuando
-# crear_procesador reciba al_listo=avisar_pedido_listo en app/main.py.
-# Es una función normal (def), así que FastAPI la ejecuta en un hilo aparte,
-# igual que el procesador de cocina. Prueba el mismo camino del aviso real.
-@router.post("/pedidos/{id}/marcar-listo", tags=["temporal"])
-def marcar_listo(id: str) -> dict[str, object]:
-    with bloqueo_pedidos:
-        pedido = pedidos.get(id)
-        if pedido is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pedido no encontrado")
-        listo = {**pedido, "estado": "listo"}
-        pedidos[id] = listo
-    avisar_pedido_listo(listo)
-    return listo

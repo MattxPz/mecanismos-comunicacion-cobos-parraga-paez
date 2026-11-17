@@ -81,7 +81,8 @@ luego hace falta.
 
 ## Estado
 
-Ambas decisiones están aplicadas: TCP en `cocina/servidor.py` y
-`app/cliente_cocina.py`, y WebSocket en `app/avisos.py` y `app/pagina.py`.
-Falta conectar el aviso WebSocket a la cocina real (`al_listo` en
-`app/main.py`).
+Ambas decisiones están aplicadas y funcionan como un solo flujo: el pedido
+entra por REST, va a cocina por TCP y, cuando cocina lo deja listo, el aviso
+sale por WebSocket (`al_listo=avisar_pedido_listo` en `app/main.py`). TCP está
+en `cocina/servidor.py` y `app/cliente_cocina.py`; WebSocket, en
+`app/avisos.py` y `app/pagina.py`.
