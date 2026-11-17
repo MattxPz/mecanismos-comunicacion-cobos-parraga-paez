@@ -82,6 +82,7 @@ $reintento.StatusCode
 | `GET /health` | `200` con `{"status":"ok"}` |
 | Crear con clave nueva | `201`, ID nuevo, estado `pendiente` y total `"5.00"` en el ejemplo |
 | Consultar el ID creado | `200` con el pedido y su último estado guardado |
+| `GET /pedidos` | `200` con la lista de pedidos guardados, en orden de creación |
 | Repetir la clave y los mismos datos validados | `200` con el mismo ID. La comparación del ejemplo imprime `True` |
 | Reusar la clave con datos válidos distintos | `409` |
 | Consultar un ID inexistente | `404` |
@@ -95,6 +96,12 @@ la respuesta son texto con dos decimales. La comparación usa los datos
 validados. `"2.50"` y `2.5` representan el mismo precio. Cambiar el orden de
 los productos sí cambia los datos. Consulta el contrato en `/docs` o
 `/openapi.json` en el mismo puerto.
+
+La API también sirve una página web en `http://127.0.0.1:8000/`. Su formulario
+crea un pedido de un producto con `POST /pedidos` y una clave nueva por envío.
+La lista usa `GET /pedidos` y se recarga tras crear o con el botón
+**Actualizar**. Está en `app/pagina.py` y usa solo HTML, CSS y JavaScript del
+navegador.
 
 ## Alcance y límites
 
@@ -119,8 +126,8 @@ cuando el estado ya es `listo`.
 | --- | --- |
 | Cocina TCP | Integrado. `app/main.py` registra `app.state.procesar_pedido = crear_procesador(pedidos, bloqueo_pedidos)` al arrancar. Estados: `pendiente` → `en_cocina` → `listo` (con `factura` y `cobro`) o `error_cocina` (con `error`). La llamada de red se hace fuera del bloqueo de pedidos. |
 | Avisos WebSocket | Función y formato de `pedido_listo`, destinatario y manejo de fallos de envío. Guardar `listo` antes de enviar el aviso. `crear_procesador` acepta `al_listo(pedido)`, que se llama después de guardar `listo`; si lanza una excepción, se registra en el log y el pedido sigue `listo`. |
-| Cliente web | Conservar el ID para consultar y la clave con el cuerpo para reintentar. Acordar el contrato de avisos y el origen web. La API aún no configura CORS para clientes en otro origen. |
-| Estadísticas | Acordar cómo obtiene los pedidos, qué estados cuenta y cómo interpreta los importes de la API. Esta versión solo expone la consulta por ID. |
+| Cliente web | Página básica integrada en `GET /` (mismo origen, sin CORS). Conservar el ID para consultar y la clave con el cuerpo para reintentar. Acordar el contrato de avisos y el origen web. La API aún no configura CORS para clientes en otro origen. |
+| Estadísticas | Acordar cómo obtiene los pedidos, qué estados cuenta y cómo interpreta los importes de la API. `GET /pedidos` devuelve todos los pedidos con su estado actual. |
 
 ## Pruebas y documentos
 

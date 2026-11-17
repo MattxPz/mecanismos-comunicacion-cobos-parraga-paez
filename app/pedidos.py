@@ -101,6 +101,12 @@ def crear_pedido(
     return pedido
 
 
+@router.get("")
+def listar_pedidos() -> list[dict[str, object]]:
+    with bloqueo_pedidos:
+        return list(pedidos.values())
+
+
 @router.get("/{id}")
 def consultar_pedido(id: str) -> dict[str, object]:
     pedido = pedidos.get(id)

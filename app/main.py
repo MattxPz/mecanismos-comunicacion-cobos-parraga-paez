@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
 from .cliente_cocina import crear_procesador
+from .pagina import router as router_pagina
 from .pedidos import bloqueo_pedidos, datos_invalidos, pedidos, router
 
 
@@ -18,6 +19,7 @@ async def ciclo_de_vida(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Pedidos de cafetería", lifespan=ciclo_de_vida)
 app.add_exception_handler(RequestValidationError, datos_invalidos)
 app.include_router(router)
+app.include_router(router_pagina)
 
 
 @app.get("/health")
