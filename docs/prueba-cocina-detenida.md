@@ -76,6 +76,22 @@ citados en el [ADR de sockets TCP](adr-sockets-tcp.md).
 | Conexión rechazada sin API | 2,028 s | 2,040 s |
 | Plazo de 0,5 s con cocina muda | 0,508 s | 0,506 s |
 
+### Comprobación con procesos reales
+
+Además de las pruebas automáticas, se arrancaron la API (Uvicorn) y cocina
+como procesos separados, igual que indica el README. Se creó un pedido con
+cocina encendida, luego se detuvo el proceso de cocina con `Stop-Process` y se
+creó otro pedido:
+
+| Caso | `POST` | Estado final | Tiempo hasta el estado final | `/health` |
+| --- | --- | --- | --- | --- |
+| Cocina encendida (`--demora 1`) | `201` en 0,206 s | `listo`, factura `F-00001`, cobro `cobrado` | 1,328 s | `200` |
+| Cocina detenida | `201` en 0,170 s | `error_cocina`, `"No se pudo conectar con cocina en 127.0.0.1:9124 (ConnectionRefusedError)"` | 2,273 s | `200` |
+
+El log de la API registró `Fallo al procesar el pedido ...` con la traza de
+`ConnectionRefusedError` y `CocinaNoDisponible`, y el proceso siguió
+atendiendo las consultas.
+
 ## Explicación con los conceptos del capítulo
 
 - **Fallo parcial.** En un sistema distribuido un componente puede fallar
@@ -120,9 +136,9 @@ fallar en milisegundos. Consecuencias para el diseño:
 
 ## Limitaciones
 
-- La prueba usa la API y la cocina reales en el mismo equipo, arrancadas por
-  las pruebas. El registro del procesador en `app/main.py` está pendiente de
-  integración, por eso la prueba lo registra con `patch.object`.
+- La prueba automática usa la API y la cocina reales en el mismo equipo,
+  arrancadas por las pruebas. Como cada prueba usa un puerto libre, registra
+  el cliente TCP con `patch.object` en lugar del registro de `app/main.py`.
 - Esta versión no reintenta automáticamente los pedidos en `error_cocina`.
 
 ## Preguntas para relacionar con el escenario de calidad
