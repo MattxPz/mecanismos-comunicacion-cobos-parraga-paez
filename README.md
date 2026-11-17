@@ -82,6 +82,7 @@ $reintento.StatusCode
 | `GET /health` | `200` con `{"status":"ok"}` |
 | Crear con clave nueva | `201`, ID nuevo, estado `pendiente` y total `"5.00"` en el ejemplo |
 | Consultar el ID creado | `200` con el pedido y su último estado guardado |
+| Conectar a `/ws` por WebSocket | Conexión aceptada. Recibe en JSON lo que envíe `broadcast` |
 | `GET /pedidos` | `200` con la lista de pedidos guardados, en orden de creación |
 | Repetir la clave y los mismos datos validados | `200` con el mismo ID. La comparación del ejemplo imprime `True` |
 | Reusar la clave con datos válidos distintos | `409` |
@@ -125,7 +126,7 @@ cuando el estado ya es `listo`.
 | Módulo | Acuerdo pendiente con el equipo |
 | --- | --- |
 | Cocina TCP | Integrado. `app/main.py` registra `app.state.procesar_pedido = crear_procesador(pedidos, bloqueo_pedidos)` al arrancar. Estados: `pendiente` → `en_cocina` → `listo` (con `factura` y `cobro`) o `error_cocina` (con `error`). La llamada de red se hace fuera del bloqueo de pedidos. |
-| Avisos WebSocket | Función y formato de `pedido_listo`, destinatario y manejo de fallos de envío. Guardar `listo` antes de enviar el aviso. `crear_procesador` acepta `al_listo(pedido)`, que se llama después de guardar `listo`; si lanza una excepción, se registra en el log y el pedido sigue `listo`. |
+| Avisos WebSocket | `app/avisos.py` expone `ws://127.0.0.1:8000/ws` y `manager = ConnectionManager()` con `conectar`, `desconectar` y `broadcast(mensaje)`. Aún no se llama a `broadcast` desde la cocina. Pendiente: Función y formato de `pedido_listo`, destinatario y manejo de fallos de envío. Guardar `listo` antes de enviar el aviso. `crear_procesador` acepta `al_listo(pedido)`, que se llama después de guardar `listo`; si lanza una excepción, se registra en el log y el pedido sigue `listo`. |
 | Cliente web | Página básica integrada en `GET /` (mismo origen, sin CORS). Conservar el ID para consultar y la clave con el cuerpo para reintentar. Acordar el contrato de avisos y el origen web. La API aún no configura CORS para clientes en otro origen. |
 | Estadísticas | Acordar cómo obtiene los pedidos, qué estados cuenta y cómo interpreta los importes de la API. `GET /pedidos` devuelve todos los pedidos con su estado actual. |
 
