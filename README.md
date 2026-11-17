@@ -39,7 +39,11 @@ en caja y emite la factura. En otra ventana de PowerShell, desde la raíz:
 ```
 
 `--demora` son los segundos que tarda en preparar cada pedido. Detenlo con
-`Ctrl+C`. La API lo busca en `127.0.0.1:9000` y espera como máximo 5 s; se
+`Ctrl+C`. Al arrancar, la API registra el cliente TCP y envía cada pedido
+nuevo a cocina en segundo plano: el pedido pasa de `pendiente` a `en_cocina`
+y luego a `listo` (con `factura` y `cobro`). Si cocina no está encendida, el
+pedido queda en `error_cocina` con el motivo en `error` y la API sigue
+funcionando. La API lo busca en `127.0.0.1:9000` y espera como máximo 5 s; se
 puede cambiar con las variables `COCINA_HOST`, `COCINA_PUERTO` y
 `COCINA_TIEMPO_ESPERA` antes de arrancar Uvicorn. El protocolo está descrito
 en el [ADR de sockets TCP](docs/adr-sockets-tcp.md).
@@ -97,14 +101,12 @@ los productos sí cambia los datos. Consulta el contrato en `/docs` o
 - Los pedidos y las claves se pierden al detener, reiniciar o recargar Uvicorn.
   Varios workers tienen memorias independientes. Ejecuta un solo proceso para
   que todos los reintentos consulten el mismo registro.
-- El servicio de cocina TCP con caja y facturación (`cocina/`) y su cliente
-  (`app/cliente_cocina.py`) ya existen. Falta registrar el cliente en
-  `app/main.py`. El cliente web, las notificaciones WebSocket y las
-  estadísticas están pendientes.
-- Un pedido queda `pendiente` mientras la aplicación carezca de un procesador
-  registrado. Las pruebas sustituyen cocina para comprobar la llamada única
-  y el estado `error_cocina` ante un fallo simulado. El recorrido completo
-  con los módulos reales está pendiente.
+- La API está conectada con el servicio de cocina TCP (`cocina/`), que
+  registra caja y facturación. El cliente web, las notificaciones WebSocket y
+  las estadísticas están pendientes.
+- `app/main.py` registra el cliente de cocina en el arranque (`lifespan`). Las
+  pruebas arrancan Uvicorn con `lifespan="off"` y registran sus propios
+  sustitutos o una cocina de prueba en un puerto libre.
 
 ## Contratos para integrar
 
@@ -115,7 +117,7 @@ cuando el estado ya es `listo`.
 
 | Módulo | Acuerdo pendiente con el equipo |
 | --- | --- |
-| Cocina TCP | Implementado. Registrar en `app/main.py` con `app.state.procesar_pedido = crear_procesador(pedidos, bloqueo_pedidos)` desde `app/cliente_cocina.py`. Estados: `pendiente` → `en_cocina` → `listo` (con `factura` y `cobro`) o `error_cocina` (con `error`). La llamada de red se hace fuera del bloqueo de pedidos. |
+| Cocina TCP | Integrado. `app/main.py` registra `app.state.procesar_pedido = crear_procesador(pedidos, bloqueo_pedidos)` al arrancar. Estados: `pendiente` → `en_cocina` → `listo` (con `factura` y `cobro`) o `error_cocina` (con `error`). La llamada de red se hace fuera del bloqueo de pedidos. |
 | Avisos WebSocket | Función y formato de `pedido_listo`, destinatario y manejo de fallos de envío. Guardar `listo` antes de enviar el aviso. `crear_procesador` acepta `al_listo(pedido)`, que se llama después de guardar `listo`; si lanza una excepción, se registra en el log y el pedido sigue `listo`. |
 | Cliente web | Conservar el ID para consultar y la clave con el cuerpo para reintentar. Acordar el contrato de avisos y el origen web. La API aún no configura CORS para clientes en otro origen. |
 | Estadísticas | Acordar cómo obtiene los pedidos, qué estados cuenta y cómo interpreta los importes de la API. Esta versión solo expone la consulta por ID. |

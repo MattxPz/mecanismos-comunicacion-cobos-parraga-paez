@@ -22,6 +22,9 @@ Fecha: 2026-11-16. Herramienta: Claude Code (modelo Claude Opus 5.5).
   aplicar dos veces `patch.object` sobre `app.state` de Starlette provocaba un
   `KeyError` al limpiar. Se corrigió parcheando una sola vez. Después pasaron
   las 14 pruebas. Los resultados documentados son los de esas ejecuciones.
+- **Integración.** La IA registró el cliente TCP en `app/main.py` mediante
+  `lifespan` y comprobó el recorrido con la API y cocina como procesos
+  separados, con cocina encendida y apagada.
 - **Resultado inesperado.** La conexión rechazada tardó unos 2 s en Windows;
   se investigó y se documentó en la prueba y en el ADR.
 - **Control humano.** Los commits los hizo la integrante; la IA no ejecutó

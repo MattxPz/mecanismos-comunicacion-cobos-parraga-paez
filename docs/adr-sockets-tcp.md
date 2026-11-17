@@ -91,5 +91,5 @@ Referencias: [TCP, RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html),
 ## Estado
 
 Decisión aplicada en `cocina/servidor.py` y `app/cliente_cocina.py`, con
-pruebas en `tests/test_cocina_tcp.py`. Falta registrar el procesador en
-`app/main.py` como parte de la integración de la API.
+pruebas en `tests/test_cocina_tcp.py`. La API registra el cliente TCP al
+arrancar en `app/main.py`.
