@@ -3,7 +3,7 @@ import json
 import socket
 import unittest
 from threading import Thread
-from time import monotonic, sleep
+from time import monotonic, perf_counter, sleep
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -143,3 +143,79 @@ class WebSocketTest(unittest.TestCase):
         hilo.join(timeout=3)
 
         self.assertEqual(json.loads(cliente.recv(timeout=3)), {"id": "abc", "estado": "listo"})
+
+    def obtener(self, ruta):
+        with urlopen(self.base + ruta, timeout=3) as respuesta:
+            return respuesta.status, json.load(respuesta)
+
+    def comprobar_cliente_desconectado(self, desconectar, caso):
+        """Escenario: un cliente WebSocket se va y el otro sigue recibiendo avisos.
+
+        Simula dos pestañas abiertas: se desconecta una, se marca un pedido
+        como listo y se comprueba que la otra recibe el aviso y que la API
+        sigue atendiendo.
+        """
+        datos = {"cliente": "Ana", "productos": [{"nombre": "Cafe", "cantidad": 1, "precio": "1.50"}]}
+        with connect(self.url) as pestana_a, connect(self.url) as pestana_b:
+            self.esperar(lambda: len(manager.conexiones) == 2, "No se registraron 2 clientes")
+            _, creado = self.post("/pedidos", datos)
+
+            desconectar(pestana_a)
+            self.esperar(lambda: len(manager.conexiones) == 1, "No se quitó al cliente desconectado")
+
+            inicio = perf_counter()
+            estado_listo, _ = self.post(f"/pedidos/{creado['id']}/marcar-listo")
+            aviso = json.loads(pestana_b.recv(timeout=3))
+            milisegundos = (perf_counter() - inicio) * 1000
+
+            salud = self.obtener("/health")
+            _, consultado = self.obtener(f"/pedidos/{creado['id']}")
+            estado_nuevo, _ = self.post("/pedidos", {**datos, "cliente": "Luis"})
+
+        self.assertEqual(estado_listo, 200)
+        self.assertEqual(aviso, {"id": creado["id"], "estado": "listo"})
+        self.assertEqual(salud, (200, {"status": "ok"}))
+        self.assertEqual(consultado["estado"], "listo")
+        self.assertEqual(estado_nuevo, 201)
+        self.assertTrue(self.hilo.is_alive(), "El servidor se detuvo")
+        print(
+            f"\nCliente desconectado ({caso}) | clientes tras desconectar=1 | "
+            f"marcar-listo={estado_listo} | aviso al otro cliente={aviso['estado']} "
+            f"en {milisegundos:.1f} ms | health={salud[0]} | pedido={consultado['estado']} | "
+            f"pedido nuevo={estado_nuevo} | servidor activo={self.hilo.is_alive()}",
+            flush=True,
+        )
+
+    def test_cliente_cierra_y_el_otro_recibe_el_aviso(self):
+        # Como cerrar una pestaña: el navegador envía el cierre WebSocket.
+        self.comprobar_cliente_desconectado(lambda cliente: cliente.close(), "cierre normal")
+
+    def test_cliente_cortado_y_el_otro_recibe_el_aviso(self):
+        # Como un navegador que se cuelga o pierde la red: se corta la
+        # conexión TCP sin enviar el cierre WebSocket.
+        def cortar(cliente):
+            cliente.socket.shutdown(socket.SHUT_RDWR)
+            cliente.socket.close()
+
+        self.comprobar_cliente_desconectado(cortar, "corte sin cierre")
+
+    def test_cliente_muerto_aun_en_la_lista_no_afecta_a_los_demas(self):
+        # El servidor todavía no notó la desconexión cuando llega el aviso:
+        # broadcast() falla al enviarle, lo quita y sigue con el otro cliente.
+        with connect(self.url) as pestana_a:
+            self.esperar(lambda: len(manager.conexiones) == 1, "No se registró el cliente A")
+            servidor_a = manager.conexiones[0]
+            with connect(self.url) as pestana_b:
+                self.esperar(lambda: len(manager.conexiones) == 2, "No se registró el cliente B")
+                pestana_a.close()
+                self.esperar(lambda: len(manager.conexiones) == 1, "No se quitó al cliente A")
+                manager.conexiones.insert(0, servidor_a)
+
+                aviso = {"id": "abc", "estado": "listo"}
+                with self.assertLogs("app.avisos", level="WARNING"):
+                    asyncio.run_coroutine_threadsafe(manager.broadcast(aviso), self.bucle).result(3)
+
+                self.assertEqual(json.loads(pestana_b.recv(timeout=3)), aviso)
+                self.assertEqual(len(manager.conexiones), 1)
+                self.assertNotIn(servidor_a, manager.conexiones)
+                self.assertEqual(self.obtener("/health"), (200, {"status": "ok"}))

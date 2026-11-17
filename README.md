@@ -142,6 +142,7 @@ Desde la raíz del proyecto:
 
 - [Evidencia de la prueba de pedido duplicado](docs/prueba-pedido-duplicado.md)
 - [Evidencia de la prueba de cocina detenida](docs/prueba-cocina-detenida.md)
+- [Evidencia de la prueba de cliente WebSocket desconectado](docs/prueba-cliente-desconectado.md)
 - [Mapa de microservicios](docs/mapa-microservicios.md)
 - [ADR de sockets TCP](docs/adr-sockets-tcp.md)
 - [ADR de WebSockets](docs/adr-websockets.md)

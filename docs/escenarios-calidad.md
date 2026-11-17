@@ -146,3 +146,21 @@ cocina muda el plazo de 0,5 s se cumplió en 0,508 s. Los 2 s de la conexión
 rechazada son un comportamiento de Windows explicado en la
 [prueba de cocina detenida](prueba-cocina-detenida.md), donde está la
 evidencia completa.
+
+## Cliente WebSocket desconectado
+
+| Elemento | Escenario |
+| --- | --- |
+| Atributo | Disponibilidad (tolerancia a fallos). |
+| Estímulo | Hay dos clientes conectados a `/ws` y uno se desconecta: cierra la pestaña o se corta su conexión sin cerrar el WebSocket. Después, un pedido pasa a `listo`. |
+| Entorno | Un proceso de Uvicorn en local, con pedidos en memoria. El aviso se dispara con `POST /pedidos/{id}/marcar-listo`. |
+| Respuesta | El servidor quita al cliente desconectado de la lista, envía el aviso al cliente que sigue conectado y continúa atendiendo solicitudes. |
+| Medida verificable | El cliente conectado recibe `{"id": ..., "estado": "listo"}` en menos de 1 s. `GET /health` responde `200`, el pedido queda `listo`, un pedido nuevo recibe `201` y el proceso sigue activo. |
+
+En la ejecución del 16 de noviembre de 2026 (Windows 11, Python 3.12.10), el
+aviso llegó al otro cliente entre 3,7 ms y 12,7 ms, tanto con cierre normal
+como con corte sin cierre. `/health` respondió `200`, los pedidos nuevos
+recibieron `201` y el proceso siguió activo. Una prueba adicional dejó en la
+lista un cliente ya cerrado: el envío a ese cliente falló, `broadcast` lo
+quitó y el otro cliente recibió el aviso igual. La evidencia completa está en
+la [prueba de cliente desconectado](prueba-cliente-desconectado.md).
