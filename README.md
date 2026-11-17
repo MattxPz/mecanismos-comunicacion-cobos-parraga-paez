@@ -128,7 +128,7 @@ cuando el estado ya es `listo`.
 | Módulo | Acuerdo pendiente con el equipo |
 | --- | --- |
 | Cocina TCP | Integrado. `app/main.py` registra `app.state.procesar_pedido = crear_procesador(pedidos, bloqueo_pedidos)` al arrancar. Estados: `pendiente` → `en_cocina` → `listo` (con `factura` y `cobro`) o `error_cocina` (con `error`). La llamada de red se hace fuera del bloqueo de pedidos. |
-| Avisos WebSocket | `app/avisos.py` expone `ws://127.0.0.1:8000/ws` y `manager = ConnectionManager()` con `conectar`, `desconectar` y `broadcast(mensaje)`. Al quedar listo se envía `{"id": ..., "estado": "listo"}` y la página muestra un aviso. Hoy solo lo dispara el endpoint temporal `POST /pedidos/{id}/marcar-listo` (botón **Marcar listo**). Pendiente: pasar `al_listo=avisar_pedido_listo` a `crear_procesador` en `app/main.py` y quitar el endpoint temporal. Por definir: y formato de `pedido_listo`, destinatario y manejo de fallos de envío. Guardar `listo` antes de enviar el aviso. `crear_procesador` acepta `al_listo(pedido)`, que se llama después de guardar `listo`; si lanza una excepción, se registra en el log y el pedido sigue `listo`. |
+| Avisos WebSocket | `app/avisos.py` expone `ws://127.0.0.1:8000/ws` y `manager = ConnectionManager()` con `conectar`, `desconectar` y `broadcast(mensaje)`. Al quedar listo se envía `{"id": ..., "estado": "listo"}` y la página muestra un aviso. Hoy solo lo dispara el endpoint temporal `POST /pedidos/{id}/marcar-listo` (botón **Marcar listo**). Pendiente: pasar `al_listo=avisar_pedido_listo` a `crear_procesador` en `app/main.py` y quitar el endpoint temporal. Ver el [ADR de WebSockets](docs/adr-websockets.md). Guardar `listo` antes de enviar el aviso. `crear_procesador` acepta `al_listo(pedido)`, que se llama después de guardar `listo`; si lanza una excepción, se registra en el log y el pedido sigue `listo`. |
 | Cliente web | Página básica integrada en `GET /` (mismo origen, sin CORS). Conservar el ID para consultar y la clave con el cuerpo para reintentar. Acordar el contrato de avisos y el origen web. La API aún no configura CORS para clientes en otro origen. |
 | Estadísticas | `GET /estadisticas` lee el almacén en memoria y devuelve `{"pedidos_listos": n, "importe_total": "x.yy"}`: cuenta los pedidos con `estado` igual a `"listo"` y suma su campo `total` con `Decimal`. La página lo muestra y lo recarga junto con la lista. |
 
@@ -144,6 +144,8 @@ Desde la raíz del proyecto:
 - [Evidencia de la prueba de cocina detenida](docs/prueba-cocina-detenida.md)
 - [Mapa de microservicios](docs/mapa-microservicios.md)
 - [ADR de sockets TCP](docs/adr-sockets-tcp.md)
+- [ADR de WebSockets](docs/adr-websockets.md)
+- [ADR comparativo: TCP y WebSockets frente a las alternativas](docs/adr-comparativo.md)
 - [Escenarios de calidad y mediciones](docs/escenarios-calidad.md)
 - [Contexto C4](docs/contexto-c4.md)
 - [ADR provisional de REST](docs/adr-rest.md)
