@@ -23,10 +23,13 @@ PAGINA = """<!DOCTYPE html>
     .ok { color: #1b5e20; }
     table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
     th, td { text-align: left; padding: 0.4rem; border-bottom: 1px solid #ddd; }
+    .aviso { background: #e8f5e9; border: 1px solid #1b5e20; border-radius: 8px; padding: 0.5rem 0.75rem; margin: 0.5rem 0; }
   </style>
 </head>
 <body>
   <h1>Pedidos de cafetería</h1>
+  <p id="conexion">Avisos: conectando...</p>
+  <div id="avisos" aria-live="polite"></div>
 
   <form id="formulario">
     <label>Cliente <input name="cliente" required></label>
@@ -39,7 +42,7 @@ PAGINA = """<!DOCTYPE html>
 
   <h2>Pedidos <button id="actualizar" type="button">Actualizar</button></h2>
   <table>
-    <thead><tr><th>Cliente</th><th>Productos</th><th>Total</th><th>Estado</th></tr></thead>
+    <thead><tr><th>Cliente</th><th>Productos</th><th>Total</th><th>Estado</th><th>Prueba</th></tr></thead>
     <tbody id="lista"></tbody>
   </table>
 
@@ -47,6 +50,8 @@ PAGINA = """<!DOCTYPE html>
     const formulario = document.getElementById("formulario");
     const mensaje = document.getElementById("mensaje");
     const lista = document.getElementById("lista");
+    const avisos = document.getElementById("avisos");
+    const conexion = document.getElementById("conexion");
 
     function mostrarMensaje(texto, clase) {
       mensaje.textContent = texto;
@@ -57,6 +62,49 @@ PAGINA = """<!DOCTYPE html>
       const td = document.createElement("td");
       td.textContent = texto;  // textContent evita inyectar HTML.
       fila.appendChild(td);
+    }
+
+    // TEMPORAL: botón para probar el aviso sin cocina TCP.
+    function botonMarcarListo(pedido) {
+      const td = document.createElement("td");
+      const boton = document.createElement("button");
+      boton.type = "button";
+      boton.textContent = "Marcar listo";
+      boton.disabled = pedido.estado === "listo";
+      boton.addEventListener("click", async () => {
+        const respuesta = await fetch("/pedidos/" + encodeURIComponent(pedido.id) + "/marcar-listo", { method: "POST" });
+        if (!respuesta.ok) mostrarMensaje("No se pudo marcar listo: HTTP " + respuesta.status, "error");
+        // La lista se recarga al llegar el aviso por WebSocket.
+      });
+      td.appendChild(boton);
+      return td;
+    }
+
+    function mostrarAviso(datos) {
+      const aviso = document.createElement("p");
+      aviso.className = "aviso";
+      aviso.textContent = "Pedido " + datos.id + " está " + datos.estado;
+      avisos.prepend(aviso);
+      setTimeout(() => aviso.remove(), 8000);
+    }
+
+    function conectarAvisos() {
+      // Misma máquina y puerto que la página; wss:// si la página usa https.
+      const protocolo = location.protocol === "https:" ? "wss://" : "ws://";
+      const socket = new WebSocket(protocolo + location.host + "/ws");
+      socket.addEventListener("open", () => { conexion.textContent = "Avisos: conectado"; });
+      socket.addEventListener("message", (evento) => {
+        const datos = JSON.parse(evento.data);
+        if (datos.estado === "listo") {
+          mostrarAviso(datos);
+          cargarPedidos();
+        }
+      });
+      socket.addEventListener("close", () => {
+        // Si el servidor se reinicia, se reintenta la conexión.
+        conexion.textContent = "Avisos: desconectado, reintentando...";
+        setTimeout(conectarAvisos, 2000);
+      });
     }
 
     async function cargarPedidos() {
@@ -71,6 +119,7 @@ PAGINA = """<!DOCTYPE html>
           celda(fila, pedido.productos.map(p => p.cantidad + " x " + p.nombre).join(", "));
           celda(fila, pedido.total);
           celda(fila, pedido.estado);
+          fila.appendChild(botonMarcarListo(pedido));
           lista.appendChild(fila);
         }
       } catch (error) {
@@ -117,6 +166,7 @@ PAGINA = """<!DOCTYPE html>
 
     document.getElementById("actualizar").addEventListener("click", cargarPedidos);
     cargarPedidos();
+    conectarAvisos();
   </script>
 </body>
 </html>

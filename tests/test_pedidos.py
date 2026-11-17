@@ -81,6 +81,8 @@ class PedidosTest(unittest.TestCase):
             html = respuesta.read().decode()
         self.assertIn('fetch("/pedidos"', html)
         self.assertIn("Idempotency-Key", html)
+        self.assertIn('"/ws"', html)
+        self.assertIn("/marcar-listo", html)
 
     def test_rechazar_datos_y_consultar_id_inexistente(self):
         datos_invalidos = {"cliente": " ", "productos": []}
