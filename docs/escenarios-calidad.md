@@ -128,3 +128,21 @@ raise SystemExit(not resultado.wasSuccessful())
 ```
 
 </details>
+
+## Fallo del servicio de cocina
+
+| Elemento | Escenario |
+| --- | --- |
+| Estímulo | El servicio de cocina TCP está detenido, o acepta la conexión pero no responde, cuando la API le envía un pedido. |
+| Entorno | Un proceso de Uvicorn y un servidor de cocina en local, con datos en memoria. La API envía el pedido a cocina en segundo plano, después de responder al cliente. |
+| Respuesta | La API acepta el pedido, deja de esperar a cocina al vencer el plazo o al rechazarse la conexión, guarda el pedido como `error_cocina` con el motivo y sigue atendiendo solicitudes. Cuando cocina vuelve, los pedidos nuevos se completan. |
+| Medida verificable | `POST /pedidos` responde `201` en menos de 1 s con cocina detenida. El pedido pasa a `error_cocina` en menos de 5 s (plazo por defecto). `GET /health` responde `200` durante el fallo. Con plazo de 0,5 s y cocina muda, el error llega en menos de 1,5 s. |
+
+En la ejecución del 16 de noviembre de 2026 (Windows 11, Python 3.14.5), el
+`POST` respondió `201` en 0,225 s, el pedido pasó a `error_cocina` a los
+2,276 s, `/health` respondió `200`, un segundo pedido también se aceptó y,
+con cocina recuperada, un tercer pedido llegó a `listo` con factura. Con
+cocina muda el plazo de 0,5 s se cumplió en 0,508 s. Los 2 s de la conexión
+rechazada son un comportamiento de Windows explicado en la
+[prueba de cocina detenida](prueba-cocina-detenida.md), donde está la
+evidencia completa.
