@@ -2,31 +2,28 @@
 
 Fecha: 2026-11-16. Herramienta: Codex.
 
-Se preparó una base mínima con FastAPI, `GET /health`, dependencias y una guía
-de ejecución en PowerShell.
+Se preparó una base mínima con FastAPI, `GET /health`, dependencias y una guía de ejecución en PowerShell.
 
 ## Cocina TCP (Veronica)
 
 Fecha: 2026-11-16. Herramienta: Claude Code (modelo Claude Opus 5.5).
 
-- **Uso.** Se pidió a la IA implementar la parte asignada a partir del reparto
-  de tareas del grupo y del código existente de la API: servidor TCP de
-  cocina con caja y facturación en memoria, cliente TCP con tiempo de espera
-  para `app.state.procesar_pedido`, pruebas, mapa de microservicios, ADR de
-  sockets TCP y documento de la prueba de cocina detenida.
-- **Decisiones revisadas.** Protocolo de una línea JSON por conexión, plazo
-  que cubre todo el intercambio, llamada de red fuera del bloqueo de pedidos,
-  e idempotencia por ID en cocina, caja y facturación.
-- **Ejecución y correcciones.** La IA ejecutó las pruebas en el equipo de la
-  integrante. La primera ejecución falló por un error de la propia prueba:
-  aplicar dos veces `patch.object` sobre `app.state` de Starlette provocaba un
-  `KeyError` al limpiar. Se corrigió parcheando una sola vez. Después pasaron
-  las 14 pruebas. Los resultados documentados son los de esas ejecuciones.
-- **Integración.** La IA registró el cliente TCP en `app/main.py` mediante
-  `lifespan` y comprobó el recorrido con la API y cocina como procesos
-  separados, con cocina encendida y apagada.
-- **Resultado inesperado.** La conexión rechazada tardó unos 2 s en Windows;
-  se investigó y se documentó en la prueba y en el ADR.
-- **Control humano.** Los commits los hizo la integrante; la IA no ejecutó
-  comandos de Git ni accedió a GitHub.
+- **Uso.** Se pidió a la IA implementar la parte asignada a partir del reparto de tareas del grupo y del código existente de la API: servidor TCP de cocina con caja y facturación en memoria, cliente TCP con tiempo de espera para `app.state.procesar_pedido`, pruebas, mapa de microservicios, ADR de sockets TCP y documento de la prueba de cocina detenida.
+- **Decisiones revisadas.** Protocolo de una línea JSON por conexión, plazo que cubre todo el intercambio, llamada de red fuera del bloqueo de pedidos, e idempotencia por ID en cocina, caja y facturación.
+- **Ejecución y correcciones.** La IA ejecutó las pruebas en el equipo de la integrante. La primera ejecución falló por un error de la propia prueba: aplicar dos veces `patch.object` sobre `app.state` de Starlette provocaba un `KeyError` al limpiar. Se corrigió parcheando una sola vez. Después pasaron las 14 pruebas. Los resultados documentados son los de esas ejecuciones.
+- **Integración.** La IA registró el cliente TCP en `app/main.py` mediante `lifespan` y comprobó el recorrido con la API y cocina como procesos separados, con cocina encendida y apagada.
+- **Resultado inesperado.** La conexión rechazada tardó unos 2 s en Windows; se investigó y se documentó en la prueba y en el ADR.
+- **Control humano.** Los commits los hizo la integrante; la IA no ejecutó comandos de Git ni accedió a GitHub.
 
+
+## Página web, avisos WebSocket y estadísticas (Jonnathan)
+
+Fecha: 2026-11-16. Herramienta: Claude Code (modelo Claude Opus 5.5).
+
+- **Uso.** Se desarrolló la parte asignada del proyecto implementando la página HTML servida por la API (con formulario y lista de pedidos vía `fetch`), el endpoint `GET /pedidos`, el endpoint `/ws` con `ConnectionManager`, los avisos de pedido listo, `GET /estadisticas` y la conexión del aviso con la cocina mediante `al_listo`. Se utilizó a la IA estrictamente como asistente de validación, creadora de pruebas unitarias y apoyo en la corrección de errores (debugging). También se le pidió ayuda para afinar la redacción de los ADR (WebSockets y comparativa TCP/WebSockets) y repasar conceptos para la defensa.
+- **Código y pruebas.** Los archivos base (`app/pagina.py`, `app/avisos.py`, `app/estadisticas.py`) y la función `listar_pedidos` en `app/pedidos.py` fueron implementados directamente por el integrante. La IA colaboró escribiendo las pruebas automatizadas en `tests/test_avisos.py` y `tests/test_pedidos.py`, y sugiriendo validaciones para los registros en `app/main.py`. Los comentarios en el código reflejan que la IA asistió en la revisión y el testing, no en la generación de la lógica central.
+- **Decisiones revisadas.** Durante el desarrollo del código, se validaron varias decisiones arquitectónicas consultando a la IA: se confirmó la estructura de campos para las estadísticas (`estado` con valor `"listo"` y `total` como importe); la necesidad de crear `GET /pedidos` para el frontend; el uso de `textContent` en lugar de `innerHTML` para evitar inyecciones HTML; la suma de importes financieros con `Decimal`; la estrategia de recorrer una copia de la lista en la función `broadcast` para capturar caídas individuales de clientes; y la invocación segura de avisos desde el hilo de cocina usando `asyncio.run_coroutine_threadsafe`.
+- **Ejecución y correcciones.** La IA asistió ejecutando y diagnosticando las pruebas en el equipo. Se detectó que el entorno global no tenía las dependencias aisladas, por lo que se configuró un `.venv`. Además, la IA ayudó a identificar que Uvicorn rechazaba los WebSockets porque faltaba la librería `websockets` en el `requirements.txt`. Durante las iteraciones de testing, se corrigió un error de sintaxis en un f-string de una de las pruebas generadas por la IA y se pulió una frase del README. Finalmente, las 28 pruebas pasaron con éxito.
+- **Integración.** Se programó un botón temporal "Marcar listo" en el frontend para probar los WebSockets antes de enlazar el módulo de cocina, flujo que se validó junto a la IA. Luego se inyectó el callback `al_listo=avisar_pedido_listo` en `crear_procesador` (`app/main.py`), se eliminó el botón de pruebas y se comprobó satisfactoriamente el ciclo de vida completo (REST → TCP → WebSocket) manteniendo la API y la cocina como procesos independientes.
+- **Resultados inesperados.** En las pruebas iniciales con el botón temporal, se detectó un bug de concurrencia: si se forzaba un pedido a "listo" antes de que el socket hacia la cocina diera timeout, el procesador sobreescribía el estado con `error_cocina`. La IA ayudó a aislar el problema en la API para documentarlo adecuadamente (comportamiento que desapareció al retirar el botón de prueba). Ya en integración total, se notó un retraso de 2 segundos en el envío del aviso por WebSocket; tras investigar colaborativamente, se comprobó que era el tiempo de cocción simulado (`--demora`) y no un cuello de botella en la red.
+- **Control humano.** La autoría de la lógica de negocio, la toma de decisiones, la ejecución de comandos Git (commits, push) y la gestión de los Pull Requests fueron realizados exclusivamente por el integrante. La IA operó localmente analizando ramas de prueba y el estado del árbol de trabajo, sin permisos para modificar el historial ni acceder a GitHub. La validación visual final, como la prueba de cliente desconectado usando múltiples pestañas, fue ejecutada manualmente por el integrante.

@@ -68,6 +68,40 @@ class PedidosTest(unittest.TestCase):
         self.assertEqual(pedido["estado"], "pendiente")
         self.assertEqual(self.solicitar(f"/pedidos/{pedido['id']}"), (200, pedido))
 
+    def test_listar_pedidos(self):
+        self.assertEqual(self.solicitar("/pedidos"), (200, []))
+        _, creado = self.solicitar("/pedidos", self.datos, self.clave)
+
+        self.assertEqual(self.solicitar("/pedidos"), (200, [creado]))
+
+    def test_pagina_html(self):
+        with urlopen(self.base + "/", timeout=3) as respuesta:
+            self.assertEqual(respuesta.status, 200)
+            self.assertIn("text/html", respuesta.headers["Content-Type"])
+            html = respuesta.read().decode()
+        self.assertIn('fetch("/pedidos"', html)
+        self.assertIn("Idempotency-Key", html)
+        self.assertIn('"/ws"', html)
+        self.assertNotIn("marcar-listo", html)
+        self.assertIn('fetch("/estadisticas")', html)
+
+    def test_estadisticas_sin_pedidos(self):
+        self.assertEqual(
+            self.solicitar("/estadisticas"), (200, {"pedidos_listos": 0, "importe_total": "0.00"})
+        )
+
+    def test_estadisticas_cuentan_solo_listos(self):
+        pedidos.update({
+            "a": {"id": "a", "estado": "listo", "total": "0.10"},
+            "b": {"id": "b", "estado": "listo", "total": "0.20"},
+            "c": {"id": "c", "estado": "pendiente", "total": "9.99"},
+            "d": {"id": "d", "estado": "error_cocina", "total": "5.00"},
+        })
+
+        self.assertEqual(
+            self.solicitar("/estadisticas"), (200, {"pedidos_listos": 2, "importe_total": "0.30"})
+        )
+
     def test_rechazar_datos_y_consultar_id_inexistente(self):
         datos_invalidos = {"cliente": " ", "productos": []}
 
